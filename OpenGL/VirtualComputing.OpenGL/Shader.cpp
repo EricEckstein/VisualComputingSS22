@@ -41,65 +41,64 @@ Shader::Shader(const char* vertexPath, const char* fragmentPath, const char* geo
 	const char* fShaderCode = fragmentCode.c_str();
 	const char* gShaderCode = geometryCode.c_str();
 
-	// 2. compile shaders
-	unsigned int vertex, fragment, geometry;
+	unsigned int newShaderProgram = 0;
+	// build and compile our shader program
+	// ------------------------------------
+	// vertex shader
+	int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertexShader, 1, &vShaderCode, NULL);
+	glCompileShader(vertexShader);
+	// check for shader compile errors
 	int success;
 	char infoLog[512];
-	// vertex Shader
-	vertex = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertex, 1, &vShaderCode, NULL);
-	glCompileShader(vertex);
-	// print compile errors if any
-	glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
-		glGetShaderInfoLog(vertex, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" <<
-			infoLog << std::endl;
-	};
-
-	fragment = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragment, 1, &fShaderCode, NULL);
-	glCompileShader(fragment);
-	// print compile errors if any
-	glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		glGetShaderInfoLog(fragment, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" <<
-			infoLog << std::endl;
-	};
-
-
-	geometry = glCreateShader(GL_GEOMETRY_SHADER);
-	glShaderSource(geometry, 1, &gShaderCode, NULL);
-	glCompileShader(geometry);
-	// print compile errors if any
-	glGetShaderiv(geometry, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		glGetShaderInfoLog(geometry, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::GEOMETRY::COMPILATION_FAILED\n" <<
-			infoLog << std::endl;
-	};
-
-	ID = glCreateProgram();
-	glAttachShader(ID, vertex);
-	glAttachShader(ID, geometry);
-	glAttachShader(ID, fragment);
-	glLinkProgram(ID);
-	// print linking errors if any
-	glGetProgramiv(ID, GL_LINK_STATUS, &success);
-	if (!success)
-	{
-		glGetProgramInfoLog(ID, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" <<
-			infoLog << std::endl;
+		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
 	}
-	// delete shaders; they’re linked into our program and no longer necessary
-	glDeleteShader(vertex);
-	glDeleteShader(fragment);
-	glDeleteShader(geometry);
+	// fragment shader
+	int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragmentShader, 1, &fShaderCode, NULL);
+	glCompileShader(fragmentShader);
+	// check for shader compile errors
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
+	}
+
+	// geometry shader
+	int geometryShader = glCreateShader(GL_GEOMETRY_SHADER);
+	glShaderSource(geometryShader, 1, &gShaderCode, NULL);
+	glCompileShader(geometryShader);
+	// check for shader compile errors
+	glGetShaderiv(geometryShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(geometryShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::GEOMETRY::COMPILATION_FAILED\n" << infoLog << std::endl;
+	}
+
+	// link shaders
+	newShaderProgram = glCreateProgram();
+	glAttachShader(newShaderProgram, vertexShader);
+	glAttachShader(newShaderProgram, geometryShader);
+	glAttachShader(newShaderProgram, fragmentShader);
+	glLinkProgram(newShaderProgram);
+	// check for linking errors
+	glGetProgramiv(newShaderProgram, GL_LINK_STATUS, &success);
+	if (!success) {
+		glGetProgramInfoLog(newShaderProgram, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+		newShaderProgram = 0;
+	}
+	glDeleteShader(vertexShader);
+	glDeleteShader(geometryShader);
+	glDeleteShader(fragmentShader);
+
+	ID = newShaderProgram;
 }
 
 void Shader::use()

@@ -95,7 +95,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Technikum\include\KHR;C:\Technikum\include\GLFW;C:\Technikum\include\glad;C:\Technikum\include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\Technikum\include\KHR;C:\Technikum\include\GLFW;C:\Technikum\include\glad;C:\Technikum\include\glm;C:\Technikum\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\GitTechnikum\Sem2\Virtual Computing\OpenGL\VirtualComputing.OpenGL\lib;C:\Technikum\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
