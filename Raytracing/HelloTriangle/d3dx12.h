@@ -13,6 +13,7 @@
 #define __D3DX12_H__
 
 #include "d3d12.h"
+#include <string>
 
 #if defined( __cplusplus )
 
