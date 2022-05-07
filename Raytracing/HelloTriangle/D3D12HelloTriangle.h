@@ -15,6 +15,7 @@
 #include <dxcapi.h>
 #include <vector>
 #include "nv_helpers_dx12/TopLevelASGenerator.h"
+#include "nv_helpers_dx12/ShaderBindingTableGenerator.h"
 
 using namespace DirectX;
 
@@ -122,4 +123,14 @@ private:
 	// Ray tracing pipeline state properties, retaining the shader identifiers
 	// to use in the Shader Binding Table
 	ComPtr<ID3D12StateObjectProperties> m_rtStateObjectProps;
+
+	void CreateRaytracingOutputBuffer();
+	void CreateShaderResourceHeap();
+	ComPtr<ID3D12Resource> m_outputResource;
+	ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
+
+	// #DXR
+	void CreateShaderBindingTable();
+	nv_helpers_dx12::ShaderBindingTableGenerator m_sbtHelper;
+	ComPtr<ID3D12Resource> m_sbtStorage;
 };
