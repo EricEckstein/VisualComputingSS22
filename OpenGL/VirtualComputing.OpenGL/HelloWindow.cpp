@@ -1,148 +1,336 @@
 #include <iostream>
+#include <vector>
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include "Shader.h"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <vector>
 
-unsigned int SCREEN_WIDTH = 1200;
-unsigned int SCREEN_HEIGHT = 800;
-unsigned int VAO = 0;
-size_t numberOfVertsToDraw = 0;
+#include "Shader.h"
+#include "PerlinNoise.hpp"
 
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void processInput(GLFWwindow* window);
 
-void processInput(GLFWwindow* window)
+const unsigned int SCR_WIDTH = 800;
+const unsigned int SCR_HEIGHT = 600;
+
+std::vector<float> vertices = {
+		-0.5f,  1.5f, 1.0f, 0.0f, 0.0f, 0.5f,
+		2.5f, 0.0f, 1.0f, 0.0f, 0.5f, -15.5f,
+		0.0f, 0.0f, 1.0f,-0.5f, -0.5f, 1.0f,
+};
+
+// camera
+glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+bool firstMouse = true;
+float yaw = -90.0f;	// yaw is initialized to -90.0 degrees since a yaw of 0.0 results in a direction vector pointing to the right so we initially rotate a bit to the left.
+float pitch = 0.0f;
+float lastX = 800.0f / 2.0;
+float lastY = 600.0 / 2.0;
+float fov = 45.0f;
+
+const siv::PerlinNoise::seed_type seed = 12345u;
+const siv::PerlinNoise perlin{ seed };
+
+unsigned int noise3D;
+const int size = 20;
+float scroll = 0.f;
+
+// timing
+float deltaTime = 0.0f;	// time between current frame and last frame
+float lastFrame = 0.0f;
+
+struct vertex {
+	float x, y, z;
+	vertex() : x(0.f), y(0.f), z(0.f) {}
+	vertex(float x, float y, float z) : x(x), y(y), z(z) {}
+} typedef vertex;
+
+int main()
 {
-	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, true);
-}
+	std::cout << "Starting..." << std::endl;
 
-GLFWwindow* initGL()
-{
-	GLFWwindow* window;
-
-	if (!glfwInit())
-		return nullptr;
-
+	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Marching cubes with OpenGL", NULL, NULL);
-	if (!window)
+	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Marching Cubes", NULL, NULL);
+	if (window == NULL)
 	{
+		std::cout << "Failed to create GLFW window" << std::endl;
 		glfwTerminate();
-		return nullptr;
+		return -1;
 	}
-
 	glfwMakeContextCurrent(window);
+	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+	glfwSetCursorPosCallback(window, mouse_callback);
+	glfwSetScrollCallback(window, scroll_callback);
+
+	// tell GLFW to capture our mouse
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
 		std::cout << "Failed to initialize GLAD" << std::endl;
-		return nullptr;
+		return -1;
 	}
-	return window;
-}
 
-void bufferGLGridData()
-{
-	//auto vertices = gridData.computeVertexDrawData(isoLevel);
-	std::vector<float> vertices = {
-		-0.5f,  1.5f, 1.0f, 0.0f, 0.0f, 0.5f, 
-		2.5f, 0.0f, 1.0f, 0.0f, 0.5f, -15.5f,
-		0.0f, 0.0f, 1.0f,-0.5f, -0.5f, 1.0f,
-	};
-	numberOfVertsToDraw = vertices.size() / 6;
-	if (numberOfVertsToDraw == 0)
-		return;
+	glEnable(GL_DEPTH_TEST);
 
-	unsigned int VBO = 0;
+	Shader ourShader("Vertex.glsl", "Fragment.glsl", "Geometry.glsl");
 
+	// set up noise cube
+	const int width = size;
+	const int height = size;
+	const int depth = size;
+
+	float noiseCube[depth][height][width];
+
+	for (int z = 0; z < depth; ++z) {
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				const float noise = perlin.normalizedOctave3D_01((x * 0.05), (y * 0.05), (z * 0.05), 8);
+				noiseCube[z][y][x] = noise;
+			}
+		}
+	}
+
+	// set up 3D texture
+	glGenTextures(1, &noise3D);
+	glBindTexture(GL_TEXTURE_3D, noise3D);
+
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_MIRRORED_REPEAT);
+
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, width, height, depth, 0, GL_RED, GL_FLOAT, noiseCube);
+
+	ourShader.use();
+	ourShader.setInt("noise3D", 0);
+
+	// set up looup table texture
+	unsigned int TBO, TBO_TEX;
+	glGenBuffers(1, &TBO);
+	glBindBuffer(GL_TEXTURE_BUFFER, TBO);
+
+		 // the offsets
+	GLfloat translationData[] = {
+				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 0
+				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 1
+				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 2
+				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 3
+				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 4
+				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 5
+				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 6
+				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 7
+	}; // 8 offsets with 3 components each
+
+	glBufferData(GL_TEXTURE_BUFFER, sizeof(translationData), translationData, GL_STATIC_DRAW);
+
+	glGenTextures(1, &TBO_TEX);
+	ourShader.setInt("triTable", 1);
+
+	// set up vertex data (and buffer(s)) and configure vertex attributes
+	std::vector<vertex> verts;
+	for (int z = 0; z < depth; ++z) {
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				verts.push_back(vertex((float)x, (float)y, -(float)z));
+			}
+		}
+	}
+
+	float vertices[width * height * depth * 3];
+	int vIndex = 0;
+	for (int i = 0; i < verts.size(); ++i) {
+		vertex v = verts.at(i);
+
+		vertices[vIndex++] = v.x;
+		vertices[vIndex++] = v.y;
+		vertices[vIndex++] = v.z;
+	}
+
+	unsigned int VBO, VAO;
 	glGenVertexArrays(1, &VAO);
 	glGenBuffers(1, &VBO);
 	glBindVertexArray(VAO);
 
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertices.size(), &vertices[0], GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-	//vertices
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
-	//normals
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-	glEnableVertexAttribArray(1);
 
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-}
+	// pass projection matrix to shader (note that in this case it could change every frame)
+	glm::mat4 projection = glm::perspective(glm::radians(fov), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+	//ourShader.setMat4("projection", projection);
+	glUseProgram(ourShader.ID);
+	glUniformMatrix4fv(glGetUniformLocation(ourShader.ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-int main()
-{
-	auto window = initGL();
-	if (!window)
-		return -1;
-
-	bufferGLGridData();
-
-	glm::vec3 lightColor{ 0.1f, 1.0f, 1.0f };
-	glm::vec3 objectColor{ 0.99609375f,0.80078125f,0.31640625f };
-
-	Shader* s = new Shader("./Vertex.glsl", "./Fragment.glsl", "./Geometry.glsl");
-	glEnable(GL_DEPTH_TEST);
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 100.0f);
-	glUseProgram(s->ID);
-	glUniformMatrix4fv(glGetUniformLocation(s->ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-
-
-	// Rendering loop
 	while (!glfwWindowShouldClose(window))
 	{
-		// Move visuals later
+		// per-frame time logic
+		// --------------------
+		float currentFrame = static_cast<float>(glfwGetTime());
+		deltaTime = currentFrame - lastFrame;
+		lastFrame = currentFrame;
+
+		// input
+		// -----
 		processInput(window);
 
-		//Rotate camera
-		float camX = float(sin(1.5f * glfwGetTime()) * 60.0f);
-		float camZ = float(cos(1.5f * glfwGetTime()) * 60.0f);
-		glm::vec3 viewPos{ camX, 8.0f, camZ };
-		glm::mat4 view = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
-		view = glm::lookAt(viewPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		float lightX = float(sin(5.0f * glfwGetTime()) * 25.0f);
-		float lightZ = float(cos(5.0f * glfwGetTime()) * 25.0f);
-		glm::vec3 lightPos{ lightX,0.0f,lightZ };
-
-		//Render
-		glClearColor(0.59765625f, 0.21484375f, 0.30078125f, 1.0f);
+		// render
+		// ------
+		glClearColor(0.2f, 0.5f, 0.3f, 1.0f);
+		//glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		//Draw marching cubes
-		glm::mat4 marchingCubesModelMat = glm::mat4(1.0f);
 
-		glUseProgram(s->ID);
-		glUniform3fv(glGetUniformLocation(s->ID, "lightPos"), 1, glm::value_ptr(lightPos));
-		glUniform3fv(glGetUniformLocation(s->ID, "lightColor"), 1, glm::value_ptr(lightColor));
-		glUniform3fv(glGetUniformLocation(s->ID, "objectColor"), 1, glm::value_ptr(objectColor));
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_3D, noise3D);
 
-		glUniformMatrix4fv(glGetUniformLocation(s->ID, "model"), 1, GL_FALSE, glm::value_ptr(marchingCubesModelMat));
-		glUniformMatrix4fv(glGetUniformLocation(s->ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
-		glUniform3fv(glGetUniformLocation(s->ID, "viewPos"), 1, glm::value_ptr(viewPos));
-		if (numberOfVertsToDraw > 0)
-		{
-			glUseProgram(s->ID);
-			glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-			glDrawArrays(GL_TRIANGLES, 0, GLsizei(numberOfVertsToDraw));
-		}
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_BUFFER, TBO_TEX);
+		glTexBuffer(GL_TEXTURE_BUFFER, GL_R32I, TBO);
 
-		//Finalise main loop
+		ourShader.use();
+
+		// camera/view transformation
+		glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+		//ourShader.setMat4("view", view);
+		glUniformMatrix4fv(glGetUniformLocation(ourShader.ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+
+		glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
+		model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+		//ourShader.setMat4("model", model);
+		glUniformMatrix4fv(glGetUniformLocation(ourShader.ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+
+		glDrawArrays(GL_POINTS, 0, width * height * depth * 3);
+
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
 	glDeleteVertexArrays(1, &VAO);
+	glDeleteBuffers(1, &VBO);
 
 	glfwTerminate();
 	return 0;
-	
+}
+
+// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
+// ---------------------------------------------------------------------------------------------------------
+void processInput(GLFWwindow* window)
+{
+	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+		glfwSetWindowShouldClose(window, true);
+
+	float cameraSpeed = static_cast<float>(2.5 * deltaTime);
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+		cameraPos += cameraSpeed * cameraFront;
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+		cameraPos -= cameraSpeed * cameraFront;
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+		cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+		cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+}
+
+// glfw: whenever the window size changed (by OS or user resize) this callback function executes
+// ---------------------------------------------------------------------------------------------
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+	// make sure the viewport matches the new window dimensions; note that width and 
+	// height will be significantly larger than specified on retina displays.
+	glViewport(0, 0, width, height);
+}
+
+// glfw: whenever the mouse moves, this callback is called
+// -------------------------------------------------------
+void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
+{
+	float xpos = static_cast<float>(xposIn);
+	float ypos = static_cast<float>(yposIn);
+
+	if (firstMouse)
+	{
+		lastX = xpos;
+		lastY = ypos;
+		firstMouse = false;
+	}
+
+	float xoffset = xpos - lastX;
+	float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+	lastX = xpos;
+	lastY = ypos;
+
+	float sensitivity = 0.1f; // change this value to your liking
+	xoffset *= sensitivity;
+	yoffset *= sensitivity;
+
+	yaw += xoffset;
+	pitch += yoffset;
+
+	// make sure that when pitch is out of bounds, screen doesn't get flipped
+	if (pitch > 89.0f)
+		pitch = 89.0f;
+	if (pitch < -89.0f)
+		pitch = -89.0f;
+
+	glm::vec3 front;
+	front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+	front.y = sin(glm::radians(pitch));
+	front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+	cameraFront = glm::normalize(front);
+}
+
+// glfw: whenever the mouse scroll wheel scrolls, this callback is called
+// ----------------------------------------------------------------------
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	/*fov -= (float)yoffset;
+	if (fov < 1.0f)
+		fov = 1.0f;
+	if (fov > 45.0f)
+		fov = 45.0f;*/
+
+	scroll -= ((float)yoffset) / 50.f;
+
+	const int width = size;
+	const int height = size;
+	const int depth = size;
+
+	float noiseCube[depth][height][width];
+
+	for (int z = 0; z < depth; ++z) {
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				const float noise = perlin.normalizedOctave3D_01((x * 0.05), (y * 0.05 + scroll), (z * 0.05), 8);
+				noiseCube[z][y][x] = noise;
+			}
+		}
+	}
+
+	glBindTexture(GL_TEXTURE_3D, noise3D);
+
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_MIRRORED_REPEAT);
+
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, width, height, depth, 0, GL_RED, GL_FLOAT, noiseCube);
 }
