@@ -8,6 +8,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "marchingcubes.h"
+
 #include "Shader.h"
 #include "PerlinNoise.hpp"
 
@@ -18,12 +20,6 @@ void processInput(GLFWwindow* window);
 
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
-
-std::vector<float> vertices = {
-		-0.5f,  1.5f, 1.0f, 0.0f, 0.0f, 0.5f,
-		2.5f, 0.0f, 1.0f, 0.0f, 0.5f, -15.5f,
-		0.0f, 0.0f, 1.0f,-0.5f, -0.5f, 1.0f,
-};
 
 // camera
 glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
@@ -86,6 +82,7 @@ int main()
 
 	glEnable(GL_DEPTH_TEST);
 
+	//Shader ourShader("shader.vs", "shader.fs");
 	Shader ourShader("Vertex.glsl", "Fragment.glsl", "Geometry.glsl");
 
 	// set up noise cube
@@ -124,20 +121,8 @@ int main()
 	unsigned int TBO, TBO_TEX;
 	glGenBuffers(1, &TBO);
 	glBindBuffer(GL_TEXTURE_BUFFER, TBO);
-
-		 // the offsets
-	GLfloat translationData[] = {
-				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 0
-				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 1
-				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 2
-				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 3
-				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 4
-				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 5
-				 2.0f, 2.0f, 2.0f, 0.0f,  // cube 6
-				 2.0f, 2.0f,-2.0f, 0.0f,  // cube 7
-	}; // 8 offsets with 3 components each
-
-	glBufferData(GL_TEXTURE_BUFFER, sizeof(translationData), translationData, GL_STATIC_DRAW);
+	// tritable data in "tri_table.h"
+	glBufferData(GL_TEXTURE_BUFFER, sizeof(triTable), triTable, GL_STATIC_DRAW);
 
 	glGenTextures(1, &TBO_TEX);
 	ourShader.setInt("triTable", 1);
@@ -173,13 +158,6 @@ int main()
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
-
-	// pass projection matrix to shader (note that in this case it could change every frame)
-	glm::mat4 projection = glm::perspective(glm::radians(fov), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-	//ourShader.setMat4("projection", projection);
-	glUseProgram(ourShader.ID);
-	glUniformMatrix4fv(glGetUniformLocation(ourShader.ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-
 	while (!glfwWindowShouldClose(window))
 	{
 		// per-frame time logic
@@ -194,7 +172,7 @@ int main()
 
 		// render
 		// ------
-		glClearColor(0.2f, 0.5f, 0.3f, 1.0f);
+		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 		//glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -207,15 +185,17 @@ int main()
 
 		ourShader.use();
 
+		// pass projection matrix to shader (note that in this case it could change every frame)
+		glm::mat4 projection = glm::perspective(glm::radians(fov), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+		ourShader.setMat4("projection", projection);
+
 		// camera/view transformation
 		glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-		//ourShader.setMat4("view", view);
-		glUniformMatrix4fv(glGetUniformLocation(ourShader.ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+		ourShader.setMat4("view", view);
 
 		glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
 		model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-		//ourShader.setMat4("model", model);
-		glUniformMatrix4fv(glGetUniformLocation(ourShader.ID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+		ourShader.setMat4("model", model);
 
 		glDrawArrays(GL_POINTS, 0, width * height * depth * 3);
 
