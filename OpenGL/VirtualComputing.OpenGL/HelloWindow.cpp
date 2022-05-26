@@ -8,7 +8,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "marchingcubes.h"
+#include "tri_table.h"
 
 #include "Shader.h"
 #include "PerlinNoise.hpp"
@@ -83,7 +83,7 @@ int main()
 	glEnable(GL_DEPTH_TEST);
 
 	//Shader ourShader("shader.vs", "shader.fs");
-	Shader ourShader("Vertex.glsl", "Fragment.glsl", "Geometry.glsl");
+	Shader ourShader("shader.vs", "shader.fs", "shader.gs");
 
 	// set up noise cube
 	const int width = size;

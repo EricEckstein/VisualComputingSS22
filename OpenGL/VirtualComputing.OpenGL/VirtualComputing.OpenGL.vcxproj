@@ -24,7 +24,7 @@
     <ClCompile Include="Shader.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="marchingcubes.h" />
+    <ClInclude Include="tri_table.h" />
     <ClInclude Include="PerlinNoise.hpp" />
     <ClInclude Include="Shader.h" />
   </ItemGroup>
@@ -32,7 +32,9 @@
     <None Include="Fragment.glsl">
       <DeploymentContent>true</DeploymentContent>
     </None>
-    <None Include="Geometry.glsl" />
+    <None Include="Geometry.glsl">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
     <None Include="Vertex.glsl">
       <DeploymentContent>true</DeploymentContent>
     </None>

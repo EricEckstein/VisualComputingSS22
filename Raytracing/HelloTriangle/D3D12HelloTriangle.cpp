@@ -200,6 +200,11 @@ void D3D12HelloTriangle::LoadPipeline() {
 
     ThrowIfFailed(m_device->CreateCommandAllocator(
         D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocator)));
+
+    // #DXR Extra: Depth Buffering
+  // The original sample does not support depth buffering, so we need to
+  // allocate a depth buffer, and later bind it before rasterization
+    CreateDepthBuffer();
 }
 
 // Load the sample assets.
@@ -265,6 +270,12 @@ void D3D12HelloTriangle::LoadAssets() {
         psoDesc.NumRenderTargets = 1;
         psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
         psoDesc.SampleDesc.Count = 1;
+
+        // #DXR Extra: Depth Buffering
+        // Add support for depth testing, using a 32-bit floating-point depth buffer
+        psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(
             &psoDesc, IID_PPV_ARGS(&m_pipelineState)));
     }
@@ -278,13 +289,21 @@ void D3D12HelloTriangle::LoadAssets() {
 
     // Create the vertex buffer.
     {
+        //// Define the geometry for a triangle.
+        //Vertex triangleVertices[] = {
+
+        //    {{0.0f, 0.25f * m_aspectRatio, 0.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
+        //    {{0.25f, -0.25f * m_aspectRatio, 0.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
+        //    {{-0.25f, -0.25f * m_aspectRatio, 0.0f}, {1.0f, 0.0f, 1.0f, 1.0f}} };
+
         // Define the geometry for a triangle.
         Vertex triangleVertices[] = {
-
-            {{0.0f, 0.25f * m_aspectRatio, 0.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-            {{0.25f, -0.25f * m_aspectRatio, 0.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-            {{-0.25f, -0.25f * m_aspectRatio, 0.0f}, {1.0f, 0.0f, 1.0f, 1.0f}} };
-
+            {{std::sqrtf(8.f / 9.f), 0.f, -1.f / 3.f}, {1.f, 0.f, 0.f, 1.f}},
+            {{-std::sqrtf(2.f / 9.f), std::sqrtf(2.f / 3.f), -1.f / 3.f},
+             {0.f, 1.f, 0.f, 1.f}},
+            {{-std::sqrtf(2.f / 9.f), -std::sqrtf(2.f / 3.f), -1.f / 3.f},
+             {0.f, 0.f, 1.f, 1.f}},
+            {{0.f, 0.f, 1.f}, {1, 0, 1, 1}} };
 
         const UINT vertexBufferSize = sizeof(triangleVertices);
 
@@ -314,6 +333,34 @@ void D3D12HelloTriangle::LoadAssets() {
         m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
         m_vertexBufferView.StrideInBytes = sizeof(Vertex);
         m_vertexBufferView.SizeInBytes = vertexBufferSize;
+
+        //----------------------------------------------------------------------------------------------
+        // Indices
+        std::vector<UINT> indices = { 0, 1, 2, 0, 3, 1, 0, 2, 3, 1, 3, 2 };
+        const UINT indexBufferSize =
+            static_cast<UINT>(indices.size()) * sizeof(UINT);
+
+        CD3DX12_HEAP_PROPERTIES heapProperty =
+            CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC bufferResource =
+            CD3DX12_RESOURCE_DESC::Buffer(indexBufferSize);
+        ThrowIfFailed(m_device->CreateCommittedResource(
+            &heapProperty, D3D12_HEAP_FLAG_NONE, &bufferResource, //
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&m_indexBuffer)));
+
+        // Copy the triangle data to the index buffer.
+        UINT8* pIndexDataBegin;
+        ThrowIfFailed(m_indexBuffer->Map(
+            0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin)));
+        memcpy(pIndexDataBegin, indices.data(), indexBufferSize);
+        m_indexBuffer->Unmap(0, nullptr);
+
+        // Initialize the index buffer view.
+        m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+        m_indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+        m_indexBufferView.SizeInBytes = indexBufferSize;
+
 
         // #DXR - Per Instance
         // Create a vertex buffer for a ground plane, similarly to the triangle definition above
@@ -403,11 +450,20 @@ void D3D12HelloTriangle::PopulateCommandList() {
         m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex,
         m_rtvDescriptorSize);
     m_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+    // #DXR Extra: Depth Buffering
+    // Bind the depth buffer as a render target
+    CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(
+        m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    m_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+
 
     // Record commands.
     // #DXR
     if (m_raster) {
-       
+        // #DXR Extra: Depth Buffering
+        m_commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
         // #DXR Extra: Perspective Camera 
         std::vector<ID3D12DescriptorHeap*> heaps = { m_constHeap.Get() };
         m_commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
@@ -419,7 +475,8 @@ void D3D12HelloTriangle::PopulateCommandList() {
         m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
         m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-        m_commandList->DrawInstanced(3, 1, 0, 0);
+        m_commandList->IASetIndexBuffer(&m_indexBufferView);
+        m_commandList->DrawIndexedInstanced(12, 1, 0, 0, 0);
         // #DXR Extra: Per-Instance Data
         // In a way similar to triangle rendering, rasterize the plane
         m_commandList->IASetVertexBuffers(0, 1, &m_planeBufferView);
@@ -568,13 +625,23 @@ void D3D12HelloTriangle::OnKeyUp(UINT8 key) {
 //
 D3D12HelloTriangle::AccelerationStructureBuffers
 D3D12HelloTriangle::CreateBottomLevelAS(
-    std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers) {
+    std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
+    std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers) {
     nv_helpers_dx12::BottomLevelASGenerator bottomLevelAS;
 
     // Adding all vertex buffers and not transforming their position.
-    for (const auto& buffer : vVertexBuffers) {
-        bottomLevelAS.AddVertexBuffer(buffer.first.Get(), 0, buffer.second,
-            sizeof(Vertex), 0, 0);
+    for (size_t i = 0; i < vVertexBuffers.size(); i++) {
+        // for (const auto &buffer : vVertexBuffers) {
+        if (i < vIndexBuffers.size() && vIndexBuffers[i].second > 0)
+            bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0,
+                vVertexBuffers[i].second, sizeof(Vertex),
+                vIndexBuffers[i].first.Get(), 0,
+                vIndexBuffers[i].second, nullptr, 0, true);
+
+        else
+            bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0,
+                vVertexBuffers[i].second, sizeof(Vertex), 0,
+                0);
     }
 
     // The AS build requires some scratch space to store temporary information.
@@ -594,14 +661,12 @@ D3D12HelloTriangle::CreateBottomLevelAS(
     buffers.pScratch = nv_helpers_dx12::CreateBuffer(
         m_device.Get(), scratchSizeInBytes,
         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON,
-
         nv_helpers_dx12::kDefaultHeapProps);
     buffers.pResult = nv_helpers_dx12::CreateBuffer(
         m_device.Get(), resultSizeInBytes,
         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
         D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
         nv_helpers_dx12::kDefaultHeapProps);
-
 
     // Build the acceleration structure. Note that this call integrates a barrier
     // on the generated AS, so that it can be used to compute a top-level AS right
@@ -626,7 +691,7 @@ void D3D12HelloTriangle::CreateTopLevelAS(
     // Gather all the instances into the builder helper
     for (size_t i = 0; i < instances.size(); i++) {
         m_topLevelASGenerator.AddInstance(instances[i].first.Get(),
-            instances[i].second, static_cast<UINT>(i),
+            instances[i].second, static_cast<UINT>(2*i),
             static_cast<UINT>(0));
     }
 
@@ -678,10 +743,13 @@ void D3D12HelloTriangle::CreateTopLevelAS(
 //
 void D3D12HelloTriangle::CreateAccelerationStructures() {
 
-
     // Build the bottom AS from the Triangle vertex buffer
     AccelerationStructureBuffers bottomLevelBuffers =
-        CreateBottomLevelAS({ {m_vertexBuffer.Get(), 3} });
+        CreateBottomLevelAS({ {m_vertexBuffer.Get(), 4} }, { {m_indexBuffer.Get(), 12} });
+
+    //// Build the bottom AS from the Triangle vertex buffer
+    //AccelerationStructureBuffers bottomLevelBuffers =
+    //    CreateBottomLevelAS({ {m_vertexBuffer.Get(), 3} });
 
     // #DXR Extra: Per-Instance Data
     AccelerationStructureBuffers planeBottomLevelBuffers =
@@ -767,7 +835,14 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateHitSignature() {
     // shader binding table we will associate each hit shader instance with its
     // constant buffer. Here we bind the buffer to the first slot, accessible in
     // HLSL as register(b0)
+    rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0 /*t0*/); // vertices and colors
+    rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 1 /*t1*/); // indices
     rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_CBV, 0);
+    // #DXR Extra - Another ray type
+    // Add a single range pointing to the TLAS in the heap
+    rsc.AddHeapRangesParameter({
+        {2 /*t2*/, 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+         1 /*2nd slot of the heap*/}, });
     return rsc.Generate(m_device.Get(), true);
 }
 
@@ -801,6 +876,14 @@ void D3D12HelloTriangle::CreateRaytracingPipeline() {
     m_missLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Miss.hlsl");
     m_hitLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Hit.hlsl");
 
+
+    // #DXR Extra - Another ray type
+    m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"ShadowRay.hlsl");
+    pipeline.AddLibrary(m_shadowLibrary.Get(),
+        { L"ShadowClosestHit", L"ShadowMiss" });
+    m_shadowSignature = CreateHitSignature();
+
+
     // In a way similar to DLLs, each library is associated with a number of
     // exported symbols. This
     // has to be done explicitly in the lines below. Note that a single library
@@ -816,8 +899,6 @@ void D3D12HelloTriangle::CreateRaytracingPipeline() {
     m_missSignature = CreateMissSignature();
     m_hitSignature = CreateHitSignature();
 
-
-    pipeline.AddHitGroup(L"PlaneHitGroup", L"PlaneClosestHit");
 
     pipeline.AddRootSignatureAssociation(m_hitSignature.Get(), { L"HitGroup", L"PlaneHitGroup" });
 
@@ -840,6 +921,12 @@ void D3D12HelloTriangle::CreateRaytracingPipeline() {
     // colors
     pipeline.AddHitGroup(L"HitGroup", L"ClosestHit");
 
+    pipeline.AddHitGroup(L"PlaneHitGroup", L"PlaneClosestHit");
+    // #DXR Extra - Another ray type
+    // Hit group for all geometry when hit by a shadow ray
+    pipeline.AddHitGroup(L"ShadowHitGroup", L"ShadowClosestHit");
+
+
     // The following section associates the root signature to each shader. Note
     // that we can explicitly show that some shaders share the same root signature
     // (eg. Miss and ShadowMiss). Note that the hit shaders are now only referred
@@ -848,6 +935,14 @@ void D3D12HelloTriangle::CreateRaytracingPipeline() {
     pipeline.AddRootSignatureAssociation(m_rayGenSignature.Get(), { L"RayGen" });
     pipeline.AddRootSignatureAssociation(m_missSignature.Get(), { L"Miss" });
     pipeline.AddRootSignatureAssociation(m_hitSignature.Get(), { L"HitGroup" });
+
+
+    // #DXR Extra - Another ray type
+    pipeline.AddRootSignatureAssociation(m_shadowSignature.Get(),
+        { L"ShadowHitGroup" });
+    // #DXR Extra - Another ray type
+    pipeline.AddRootSignatureAssociation(m_missSignature.Get(),
+        { L"Miss", L"ShadowMiss" });
 
     // The payload size defines the maximum size of the data carried by the rays,
     // ie. the the data
@@ -867,7 +962,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline() {
     // then requires a trace depth of 1. Note that this recursion depth should be
     // kept to a minimum for best performance. Path tracing algorithms can be
     // easily flattened into a simple loop in the ray generation.
-    pipeline.SetMaxRecursionDepth(1);
+    pipeline.SetMaxRecursionDepth(2);
 
     // Compile the pipeline for execution on the GPU
     m_rtStateObject = pipeline.Generate();
@@ -994,19 +1089,28 @@ void D3D12HelloTriangle::CreateShaderBindingTable() {
     // The miss and hit shaders do not access any external resources: instead they
     // communicate their results through the ray payload
     m_sbtHelper.AddMissProgram(L"Miss", {});
+    m_sbtHelper.AddMissProgram(L"ShadowMiss", {});
 
     // #DXR Extra: Per-Instance Data
     // We have 3 triangles, each of which needs to access its own constant buffer
     // as a root parameter in its primary hit shader. The shadow hit only sets a
     // boolean visibility in the payload, and does not require external data
-    for (int i = 0; i < 3; ++i) {
-        m_sbtHelper.AddHitGroup(L"HitGroup", { (void*)(m_perInstanceConstantBuffers[i]->GetGPUVirtualAddress()) });
+    {
+        m_sbtHelper.AddHitGroup(
+            L"HitGroup",
+            { (void*)(m_vertexBuffer->GetGPUVirtualAddress()),
+              (void*)(m_indexBuffer->GetGPUVirtualAddress()),
+             (void*)(m_perInstanceConstantBuffers[0]->GetGPUVirtualAddress()) });
+        // #DXR Extra - Another ray type
+        m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
     }
-    
+
+
     // #DXR Extra: Per-Instance Data
     // Adding the plane
-    m_sbtHelper.AddHitGroup(L"PlaneHitGroup", { heapPointer });
-
+    m_sbtHelper.AddHitGroup(L"PlaneHitGroup", 
+                        {(void*)(m_perInstanceConstantBuffers[0]->GetGPUVirtualAddress()), heapPointer});
+    m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
 
     // The plane also uses a constant buffer for its vertex colors
     m_sbtHelper.AddHitGroup(L"HitGroup",
@@ -1207,4 +1311,47 @@ void D3D12HelloTriangle::CreatePerInstanceConstantBuffers() {
         cb->Unmap(0, nullptr);
         ++i;
     }
+}
+
+//-----------------------------------------------------------------------------
+//
+// Create the depth buffer for rasterization. This buffer needs to be kept in a
+// separate heap
+//
+// #DXR Extra: Depth Buffering
+void D3D12HelloTriangle::CreateDepthBuffer() {
+
+    // The depth buffer heap type is specific for that usage, and the heap
+    // contents are not visible from the shaders
+    m_dsvHeap = nv_helpers_dx12::CreateDescriptorHeap(
+        m_device.Get(), 1, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, false);
+
+    // The depth and stencil can be packed into a single 32-bit texture buffer.
+    // Since we do not need stencil, we use the 32 bits to store depth information
+    // (DXGI_FORMAT_D32_FLOAT).
+    D3D12_HEAP_PROPERTIES depthHeapProperties =
+        CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+
+    D3D12_RESOURCE_DESC depthResourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+        DXGI_FORMAT_D32_FLOAT, m_width, m_height, 1, 1);
+    depthResourceDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    // The depth values will be initialized to 1
+    CD3DX12_CLEAR_VALUE depthOptimizedClearValue(DXGI_FORMAT_D32_FLOAT, 1.0f, 0);
+
+    // Allocate the buffer itself, with a state allowing depth writes
+    ThrowIfFailed(m_device->CreateCommittedResource(
+        &depthHeapProperties, D3D12_HEAP_FLAG_NONE, &depthResourceDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE, &depthOptimizedClearValue,
+        IID_PPV_ARGS(&m_depthStencil)));
+
+    // Write the depth buffer view into the depth buffer heap
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+    m_device->CreateDepthStencilView(
+        m_depthStencil.Get(), &dsvDesc,
+        m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
 }

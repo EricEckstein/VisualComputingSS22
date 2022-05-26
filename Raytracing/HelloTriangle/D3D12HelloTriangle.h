@@ -97,7 +97,11 @@ private:
 	///
 	/// \param vVertexBuffers : pair of buffer and vertex count
 	/// \return AccelerationStructureBuffers for TLAS
-	AccelerationStructureBuffers CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers);
+	AccelerationStructureBuffers CreateBottomLevelAS(
+		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
+		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers =
+		{});
+
 
 	/// Create the main acceleration structure that holds
 	/// all instances of the scene
@@ -152,4 +156,17 @@ private:
 
 	void CreatePerInstanceConstantBuffers();
 	std::vector<ComPtr<ID3D12Resource>> m_perInstanceConstantBuffers;
+
+	// #DXR Extra: Depth Buffering
+	void CreateDepthBuffer();
+	ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
+	ComPtr<ID3D12Resource> m_depthStencil;
+
+	ComPtr<IDxcBlob> m_shadowLibrary;
+	ComPtr<ID3D12RootSignature> m_shadowSignature;
+
+
+	ComPtr<ID3D12Resource> m_indexBuffer;
+	D3D12_INDEX_BUFFER_VIEW m_indexBufferView;
+
 };
