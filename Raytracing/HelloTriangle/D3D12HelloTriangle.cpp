@@ -297,13 +297,24 @@ void D3D12HelloTriangle::LoadAssets() {
         //    {{-0.25f, -0.25f * m_aspectRatio, 0.0f}, {1.0f, 0.0f, 1.0f, 1.0f}} };
 
         // Define the geometry for a triangle.
+        //Vertex triangleVertices[] = {
+        //    {{std::sqrtf(8.f / 9.f), 0.f, -1.f / 3.f}, {1.f, 0.f, 0.f, 1.f}},
+        //    {{-std::sqrtf(2.f / 9.f), std::sqrtf(2.f / 3.f), -1.f / 3.f},
+        //     {0.f, 1.f, 0.f, 1.f}},
+        //    {{-std::sqrtf(2.f / 9.f), -std::sqrtf(2.f / 3.f), -1.f / 3.f},
+        //     {0.f, 0.f, 1.f, 1.f}},
+        //    {{0.f, 0.f, 1.f}, {1, 0, 1, 1}} };
+
         Vertex triangleVertices[] = {
-            {{std::sqrtf(8.f / 9.f), 0.f, -1.f / 3.f}, {1.f, 0.f, 0.f, 1.f}},
-            {{-std::sqrtf(2.f / 9.f), std::sqrtf(2.f / 3.f), -1.f / 3.f},
-             {0.f, 1.f, 0.f, 1.f}},
-            {{-std::sqrtf(2.f / 9.f), -std::sqrtf(2.f / 3.f), -1.f / 3.f},
-             {0.f, 0.f, 1.f, 1.f}},
-            {{0.f, 0.f, 1.f}, {1, 0, 1, 1}} };
+            {{0.f, 0.f, 0.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{1.f, 0.f, 0.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{1.f, 0.f, 1.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{0.f, 0.f, 1.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{0.f, 1.f, 0.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{1.f, 1.f, 0.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{1.f, 1.f, 1.f}, {0.5f, 0.5f, 1, 0.7f}},
+            {{0.f, 1.f, 1.f}, {0.5f, 0.5f, 1, 0.7f}}, }
+        ;
 
         const UINT vertexBufferSize = sizeof(triangleVertices);
 
@@ -336,7 +347,12 @@ void D3D12HelloTriangle::LoadAssets() {
 
         //----------------------------------------------------------------------------------------------
         // Indices
-        std::vector<UINT> indices = { 0, 1, 2, 0, 3, 1, 0, 2, 3, 1, 3, 2 };
+        std::vector<UINT> indices = { 0,1,2,0,2,3, // bottom
+                                      4,5,6,4,6,7, // top
+                                      1,2,6,1,6,5, // right
+                                      0,3,7,0,7,4, // left
+                                      0,1,5,0,5,4, // front
+                                      2,6,7,2,7,3}; // back
         const UINT indexBufferSize =
             static_cast<UINT>(indices.size()) * sizeof(UINT);
 
@@ -476,7 +492,7 @@ void D3D12HelloTriangle::PopulateCommandList() {
         m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
         m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
         m_commandList->IASetIndexBuffer(&m_indexBufferView);
-        m_commandList->DrawIndexedInstanced(12, 1, 0, 0, 0);
+        m_commandList->DrawIndexedInstanced(36, 1, 0, 0, 0);
         // #DXR Extra: Per-Instance Data
         // In a way similar to triangle rendering, rasterize the plane
         m_commandList->IASetVertexBuffers(0, 1, &m_planeBufferView);
@@ -745,7 +761,7 @@ void D3D12HelloTriangle::CreateAccelerationStructures() {
 
     // Build the bottom AS from the Triangle vertex buffer
     AccelerationStructureBuffers bottomLevelBuffers =
-        CreateBottomLevelAS({ {m_vertexBuffer.Get(), 4} }, { {m_indexBuffer.Get(), 12} });
+        CreateBottomLevelAS({ {m_vertexBuffer.Get(), 4} }, { {m_indexBuffer.Get(), 36} });
 
     //// Build the bottom AS from the Triangle vertex buffer
     //AccelerationStructureBuffers bottomLevelBuffers =
@@ -758,8 +774,10 @@ void D3D12HelloTriangle::CreateAccelerationStructures() {
     // Just one instance for now
     m_instances = 
     {   {bottomLevelBuffers.pResult, XMMatrixIdentity()}, 
-        {bottomLevelBuffers.pResult, XMMatrixTranslation(.6f, 0, 0)},
-        {bottomLevelBuffers.pResult, XMMatrixTranslation(-.6f, 0, 0)}, 
+        
+        // Just one cube needed
+        //{bottomLevelBuffers.pResult, XMMatrixTranslation(.6f, 0, 0)},
+        //{bottomLevelBuffers.pResult, XMMatrixTranslation(-.6f, 0, 0)}, 
     // #DXR Extra: Per-Instance Data 
         {planeBottomLevelBuffers.pResult, XMMatrixTranslation(0, 0, 0)}
     };
@@ -1110,7 +1128,9 @@ void D3D12HelloTriangle::CreateShaderBindingTable() {
     // Adding the plane
     m_sbtHelper.AddHitGroup(L"PlaneHitGroup", 
                         {(void*)(m_perInstanceConstantBuffers[0]->GetGPUVirtualAddress()), heapPointer});
-    m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
+
+    m_sbtHelper.AddHitGroup(L"PlaneHitGroup",
+        { (void*)(m_perInstanceConstantBuffers[0]->GetGPUVirtualAddress()), heapPointer });
 
     // The plane also uses a constant buffer for its vertex colors
     m_sbtHelper.AddHitGroup(L"HitGroup",
